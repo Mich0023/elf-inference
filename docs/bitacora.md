@@ -123,8 +123,28 @@ Aciertos exactos: `reverse_string` (zero-shot) y `duplicate_string` (CoT).
 - `capturas/2026-10-01_bench_docker_windows.png`: benchmark en Docker
 - `capturas/2026-10-01_bench_windows_nativo.png`: benchmark nativo y `bench-report`
 
+### Re-medición en Windows nativo tras la corrección de red
+
+| Etapa | Docker en Windows | Windows nativo (antes) | Windows nativo (después) |
+|---|---|---|---|
+| Extracción (s/pasada) | 1.66 ± 0.21 | 1.13 ± 0.06 | **1.04 ± 0.01** |
+| Inferencia few-shot (s/función) | **0.90 ± 0.31** | 3.15 ± 0.23 | 1.57 ± 0.46 |
+
+- La inferencia nativa bajó a la mitad (3.15 → 1.57 s): **confirma que la mayor parte de la
+  diferencia era el retraso de red**, no el sistema operativo.
+- La extracción nativa es consistente (desviación de 0.01 s) y sigue siendo ~37% más rápida que Docker.
+- Queda una brecha en inferencia (1.57 contra 0.90 s). Posible causa: el código abría una conexión nueva
+  a Ollama en cada función. **Corregido:** ahora se reutiliza un solo cliente. Hay que volver a medir.
+- **Ojo:** `bench-report` promedia la medición nativa vieja (con el error) y la nueva, así que su `2.361`
+  no es válido. La fila del 2026-10-01 00:14 de `windows` en `benchmarks.csv` se eliminó del reporte
+  (queda registrada en esta bitácora y en sus capturas).
+- A partir de esta versión, la columna `fecha` del CSV se guarda siempre en UTC (Docker ya lo hacía;
+  Windows guardaba hora local).
+
+Capturas: `capturas/2026-10-01_bench_windows_tras_correccion.png`, `capturas/2026-10-01_bench_report.png`.
+
 ### Siguiente
-- Repetir `bench --entorno windows` con la corrección de red (3 corridas por entorno).
+- Repetir `bench` 3 veces en `windows` y `docker-windows` con el cliente reutilizado.
 - Medir en Linux (misma laptop, USB booteable o arranque dual).
 - Probar `qwen2.5-coder:3b` y `deepseek-coder:6.7b` con las mismas 20 funciones.
 - Ampliar el dataset con proyectos reales (cJSON, tinyexpr, miniz) para acercarse a 500 funciones.

@@ -242,10 +242,10 @@ def bench(entorno, bin_dir, repeticiones, n_inferencia, modelo, estrategia, pool
     \b
     - extraccion: Radare2 sobre TODOS los *.stripped de --bin-dir, varias pasadas.
     - inferencia: las mismas N funciones (semilla fija) en el modelo local.
-    Cada medición se agrega a benchmarks/benchmarks.csv.
+    Cada medición se agrega a benchmarks/benchmarks.csv (fecha en UTC).
     """
     entorno = entorno or _entorno_auto()
-    comun = {"fecha": time.strftime("%Y-%m-%d %H:%M"), "entorno": entorno,
+    comun = {"fecha": time.strftime("%Y-%m-%d %H:%M", time.gmtime()), "entorno": entorno,
              "radare2": _version_r2(), "python": platform.python_version(),
              "plataforma": platform.platform()}
 

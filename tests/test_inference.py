@@ -29,6 +29,7 @@ def test_parsear_nombre():
 
 def test_reporte_con_ground_truth(monkeypatch):
     monkeypatch.setattr(inference.ollama, "Client", ClienteFalso)
+    monkeypatch.setattr(inference, "_CLIENTE", None)
     fila = inference.inferir_funcion(_fn("list_sum"), "qwen2.5-coder:7b", "cot")
     # campos que necesita la capa de reconstrucción
     for k in ("direccion", "tamano_bytes", "nombre_inferido", "confianza", "estrategia", "modelo"):
@@ -39,6 +40,7 @@ def test_reporte_con_ground_truth(monkeypatch):
 
 def test_reporte_sin_ground_truth(monkeypatch):
     monkeypatch.setattr(inference.ollama, "Client", ClienteFalso)
+    monkeypatch.setattr(inference, "_CLIENTE", None)
     fila = inference.inferir_funcion(_fn(None), "qwen2.5-coder:7b", "zero-shot")
     assert "f1" not in fila
     assert fila["confianza"] == "media"

@@ -42,8 +42,15 @@ _RE_NAME = re.compile(r"NAME\s*:[\s*`#]*([A-Za-z_][A-Za-z0-9_]*)")
 _RE_IDENT = re.compile(r"\b([a-z][a-z0-9]*(?:_[a-z0-9]+)+)\b")
 
 
+_CLIENTE: ollama.Client | None = None
+
+
 def _cliente() -> ollama.Client:
-    return ollama.Client(host=OLLAMA_HOST)
+    """Un solo cliente (una conexión reutilizable) para todas las llamadas."""
+    global _CLIENTE
+    if _CLIENTE is None:
+        _CLIENTE = ollama.Client(host=OLLAMA_HOST)
+    return _CLIENTE
 
 
 def parsear_nombre(respuesta: str) -> str | None:
