@@ -72,10 +72,11 @@ docker compose run --rm elfinfer infer data/dataset/dataset.json \
 |---|---|
 | `check` | Verifica Radare2 y la conexión con Ollama |
 | `extract BIN [--ref BIN_CON_SIMBOLOS] -o out.json` | Extrae funciones (dirección, tamaño, Assembly) |
-| `build-dataset` | Empareja cada `X.stripped` con `X` y guarda `data/dataset/dataset.json` |
+| `build-dataset [--bin-dir DIR]` | Empareja cada binario stripped con su versión con símbolos y guarda `data/dataset/dataset.json` |
 | `prompt JSON --estrategia few-shot --indice N --pool dataset.json` | Muestra el prompt exacto (no usa GPU) |
 | `infer ENTRADA [--ref] --modelo M --estrategia E -o report.json` | Corre la inferencia y genera `report.json` |
 | `evaluate report.json` | Tabla de EM / F1 / BLEU-4 por modelo y estrategia |
+| `export report.json --binario B --estrategia E -o contrato.json` | Convierte el reporte al formato que lee `reconstructor.py` (capa de reconstrucción) |
 | `bench --entorno E [--inferencia N]` | Mide tiempos de extracción e inferencia (comparativa entre SO) |
 | `bench-report` | Tabla comparativa de todos los entornos medidos |
 
@@ -117,19 +118,68 @@ Es la interfaz con la capa de reconstrucción. Cada función:
 
 ---
 
+## Conectar con la capa de reconstrucción (`reconstructor.py`)
+
+El `report.json` de `infer` es para **evaluar** (trae métricas y varias estrategias juntas).
+La capa de reconstrucción espera **un archivo por binario y por estrategia**, con este formato:
+
+```json
+{
+  "binary": "binarios/aes_O0_stripped",
+  "functions": [
+    {"address": "0x12ef", "size": 705, "inferred_name": "key_expansion",
+     "confidence": "media", "prompt_strategy": "few-shot"}
+  ]
+}
+```
+
+`export` hace la conversión:
+
+```bash
+elfinfer infer binarios/aes_O0_stripped --estrategia few-shot -o results/aes_O0.json
+elfinfer export results/aes_O0.json --binario binarios/aes_O0_stripped --estrategia few-shot \
+    -o reportes/aes_O0_fewshot.json
+python3 src/reconstructor.py binarios/aes_O0_stripped reportes/aes_O0_fewshot.json binarios/aes_O0_patched.elf
+```
+
+- `main` no se le pregunta al modelo: Radare2 la reconoce aunque el binario esté stripped, así que se
+  exporta con ese nombre y confianza `alta`.
+- El código de arranque del compilador (`entry0`, `entry.init0`, `entry.fini0`) no se extrae.
+- Probado con el `reconstructor.py` de la guía (md5 `b8a20db9…`): todos los símbolos se reinyectan
+  y el binario reconstruido produce exactamente la misma salida.
+
+---
+
 ## Agregar proyectos reales al dataset
 
-1. Copia los `.c` del proyecto (p. ej. cJSON, tinyexpr) a una carpeta, por ejemplo `fuentes/cjson/`.
+`build-dataset` acepta las dos convenciones de nombres:
+
+| Convención | Stripped | Con símbolos |
+|---|---|---|
+| elfinfer (`scripts/build_samples.sh`) | `checksum_O1.stripped` | `checksum_O1` |
+| Servidor (`validar_todo.py`) | `aes_O1_stripped` | `aes_O1_nonstripped` |
+
+Así se pueden usar directamente los binarios ya compilados en el servidor
+(aes, cJSON, tinyexpr, crypto-algorithms, sds, zlib, SQLite en O0/O1/O2):
+
+```bash
+# copia la carpeta binarios/ del servidor a data/server_bins/ y luego:
+docker compose run --rm elfinfer build-dataset --bin-dir data/server_bins -o data/dataset/dataset_server.json
+```
+
+Para proyectos nuevos de un solo archivo:
+
+1. Copia los `.c` a una carpeta, por ejemplo `fuentes/cjson/`.
 2. Compílalos:
    ```bash
    docker compose run --rm --entrypoint bash elfinfer scripts/build_samples.sh fuentes/cjson
    ```
-   Para proyectos con varios archivos o `Makefile`, compílalos con `-g -O0/-O1/-O2`,
-   copia el ejecutable a `data/binaries/<proyecto>_O<n>` y su versión stripped a
-   `data/binaries/<proyecto>_O<n>.stripped`.
 3. Vuelve a correr `build-dataset`.
 
 En few-shot **nunca** se usan ejemplos del mismo proyecto que la función evaluada, para no "regalarle" la respuesta al modelo.
+
+Los sufijos que GCC agrega a funciones optimizadas (`.constprop.0`, `.isra.0`, `.part.1`, `.cold`) se
+quitan antes de calcular EM/F1/BLEU-4 y al mostrar ejemplos al modelo: el modelo no puede adivinarlos.
 
 ---
 

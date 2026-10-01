@@ -16,6 +16,7 @@ import csv
 import json
 import platform
 import random
+import re
 import shutil
 import statistics
 import subprocess
@@ -30,7 +31,7 @@ from .prompt_builder import ESTRATEGIAS, construir_prompt
 
 
 def _proyecto(binario: str) -> str:
-    """'tinyexpr_O1.stripped' -> 'tinyexpr'"""
+    """'tinyexpr_O1.stripped' o 'tinyexpr_O1_stripped' -> 'tinyexpr'"""
     return binario.split("_O")[0]
 
 
@@ -78,18 +79,33 @@ def extract(binario, ref, out):
 
 
 # ------------------------------------------------------------- build-dataset
+def _pares_binarios(bin_dir: str) -> list[tuple[Path, Path]]:
+    """
+    Encuentra pares (stripped, con_simbolos) con cualquiera de las dos convenciones:
+      - elfinfer:  <proyecto>_O<n>.stripped   +  <proyecto>_O<n>
+      - Fernanda:  <proyecto>_O<n>_stripped   +  <proyecto>_O<n>_nonstripped
+    """
+    pares = []
+    for s in sorted(Path(bin_dir).glob("*.stripped")):
+        pares.append((s, s.with_suffix("")))
+    for s in sorted(Path(bin_dir).glob("*_stripped")):
+        pares.append((s, s.with_name(s.name[: -len("_stripped")] + "_nonstripped")))
+    return pares
+
+
 @cli.command("build-dataset")
 @click.option("--bin-dir", default="data/binaries", show_default=True,
               type=click.Path(exists=True, file_okay=False))
 @click.option("-o", "--out", default="data/dataset/dataset.json", show_default=True)
 def build_dataset(bin_dir, out):
-    """Empareja X.stripped con X y genera el dataset con ground truth."""
+    """Empareja cada binario stripped con su versión con símbolos y genera el dataset."""
     todas = []
-    pares = sorted(Path(bin_dir).glob("*.stripped"))
+    pares = _pares_binarios(bin_dir)
     if not pares:
-        raise click.ClickException(f"No hay binarios *.stripped en {bin_dir}. Corre scripts/build_samples.sh")
-    for stripped in pares:
-        ref = stripped.with_suffix("")
+        raise click.ClickException(
+            f"No hay binarios stripped en {bin_dir} (X.stripped o X_stripped). "
+            "Corre scripts/build_samples.sh o copia los de binarios/ del servidor.")
+    for stripped, ref in pares:
         if not ref.exists():
             click.echo(f"[!] Falta la versión con símbolos de {stripped.name}, la salto")
             continue
@@ -190,9 +206,68 @@ def evaluate(report):
 
 
 def _imprimir_resumen(res: dict) -> None:
-    click.echo(f"\n{'modelo | estrategia':45s} {'n':>4} {'EM':>7} {'F1':>7} {'BLEU4':>7} {'s/fn':>6}")
+    click.echo(f"\n{'modelo | estrategia':45s} {'n':>4} {'EM':>7} {'F1':>7} {'BLEU4':>7} {'s/fn':>6} {'tok/resp':>8}")
     for k, v in res.items():
-        click.echo(f"{k:45s} {v['n']:4d} {v['EM']:7.3f} {v['F1']:7.3f} {v['BLEU4']:7.3f} {v['seg_promedio']:6.2f}")
+        tok = f"{v['tokens_resp_prom']:8.1f}" if v.get("tokens_resp_prom") is not None else f"{'-':>8}"
+        click.echo(f"{k:45s} {v['n']:4d} {v['EM']:7.3f} {v['F1']:7.3f} {v['BLEU4']:7.3f} {v['seg_promedio']:6.2f} {tok}")
+
+
+# ------------------------------------------------------------------- export
+_RE_SIMBOLO = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+@cli.command()
+@click.argument("report", type=click.Path(exists=True, dir_okay=False))
+@click.option("--binario", required=True,
+              help="Ruta del binario stripped al que corresponde (se escribe en el campo 'binary').")
+@click.option("--modelo", default=None, help="Si el reporte tiene varios modelos, cuál exportar.")
+@click.option("--estrategia", type=click.Choice(ESTRATEGIAS), default=None,
+              help="Si el reporte tiene varias estrategias, cuál exportar.")
+@click.option("-o", "--out", required=True, type=click.Path(dir_okay=False))
+def export(report, binario, modelo, estrategia, out):
+    """
+    Convierte un report.json de elfinfer al contrato de la capa de reconstrucción:
+
+    \b
+    {"binary": ..., "functions": [{"address", "size", "inferred_name",
+                                   "confidence", "prompt_strategy"}]}
+    """
+    filas = json.loads(Path(report).read_text(encoding="utf-8"))
+    nombre_bin = Path(binario).name
+    filas = [f for f in filas if f.get("binario") == nombre_bin]
+    if not filas:
+        raise click.ClickException(f"El reporte no tiene funciones del binario {nombre_bin}.")
+
+    combos = sorted({(f["modelo"], f["estrategia"]) for f in filas})
+    if modelo:
+        filas = [f for f in filas if f["modelo"] == modelo]
+    if estrategia:
+        filas = [f for f in filas if f["estrategia"] == estrategia]
+    if len({(f["modelo"], f["estrategia"]) for f in filas}) != 1:
+        opciones = ", ".join(f"{m} | {e}" for m, e in combos)
+        raise click.ClickException(
+            f"Elige UNA combinación con --modelo y --estrategia. Disponibles: {opciones}")
+
+    funciones, invalidas = [], 0
+    for f in sorted(filas, key=lambda x: int(x["direccion"], 16)):
+        nombre = f.get("nombre_inferido")
+        if not nombre or not _RE_SIMBOLO.match(nombre):
+            invalidas += 1
+            continue
+        funciones.append({
+            "address": f["direccion"],
+            "size": int(f["tamano_bytes"]),
+            "inferred_name": nombre,
+            "confidence": f.get("confianza"),
+            "prompt_strategy": "chain-of-thought" if f["estrategia"] == "cot" else f["estrategia"],
+        })
+
+    Path(out).parent.mkdir(parents=True, exist_ok=True)
+    Path(out).write_text(json.dumps({"binary": binario, "functions": funciones}, indent=2,
+                                    ensure_ascii=False), encoding="utf-8")
+    click.secho(f"[+] {len(funciones)} funciones -> {out}", fg="green")
+    if invalidas:
+        click.echo(f"[!] {invalidas} sin nombre válido (no se exportan)")
 
 
 # --------------------------------------------------------------------- bench
@@ -250,7 +325,7 @@ def bench(entorno, bin_dir, repeticiones, n_inferencia, modelo, estrategia, pool
              "plataforma": platform.platform()}
 
     # ---- extracción
-    binarios = sorted(Path(bin_dir).glob("*.stripped"))
+    binarios = [s for s, _ in _pares_binarios(bin_dir)]
     if not binarios:
         raise click.ClickException(f"No hay *.stripped en {bin_dir}. Corre scripts/build_samples.sh")
     click.secho(f"[extracción] {len(binarios)} binarios × {repeticiones} pasadas", fg="cyan")

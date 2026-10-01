@@ -1,0 +1,54 @@
+{
+  "binary": "binarios/checksum_O0_stripped",
+  "functions": [
+    {
+      "address": "0x10b0",
+      "size": 34,
+      "inferred_name": "crc32",
+      "confidence": "baja",
+      "prompt_strategy": "few-shot"
+    },
+    {
+      "address": "0x1169",
+      "size": 118,
+      "inferred_name": "clear_tm_clones",
+      "confidence": "baja",
+      "prompt_strategy": "few-shot"
+    },
+    {
+      "address": "0x11df",
+      "size": 166,
+      "inferred_name": "fletcher_checksum",
+      "confidence": "media",
+      "prompt_strategy": "few-shot"
+    },
+    {
+      "address": "0x1285",
+      "size": 67,
+      "inferred_name": "xor_bytes",
+      "confidence": "baja",
+      "prompt_strategy": "few-shot"
+    },
+    {
+      "address": "0x12c8",
+      "size": 68,
+      "inferred_name": "hash_string",
+      "confidence": "baja",
+      "prompt_strategy": "few-shot"
+    },
+    {
+      "address": "0x130c",
+      "size": 189,
+      "inferred_name": "adler_sum",
+      "confidence": "baja",
+      "prompt_strategy": "few-shot"
+    },
+    {
+      "address": "0x13c9",
+      "size": 229,
+      "inferred_name": "main",
+      "confidence": "alta",
+      "prompt_strategy": "few-shot"
+    }
+  ]
+}

@@ -13,6 +13,7 @@ para poder parsearla de forma fiable.
 from __future__ import annotations
 
 from .extractor import Funcion
+from .metrics import normalizar_nombre
 
 ESTRATEGIAS = ("zero-shot", "few-shot", "cot")
 
@@ -60,7 +61,7 @@ def seleccionar_ejemplos(objetivo: Funcion, pool: list[Funcion], k: int = 3) -> 
     for f in pool:
         if not f.nombre_original:
             continue
-        if f.nombre_original == objetivo.nombre_original:
+        if normalizar_nombre(f.nombre_original) == normalizar_nombre(objetivo.nombre_original):
             continue  # evita "chivatearle" la respuesta al modelo
         m = _mnemonicos(f)
         jaccard = len(m_obj & m) / max(1, len(m_obj | m))
@@ -88,7 +89,7 @@ def construir_prompt(objetivo: Funcion, estrategia: str,
         for i, e in enumerate(ejemplos, 1):
             bloques.append(
                 f"### Example {i}\n```asm\n{_asm(e, MAX_LINEAS_EJEMPLO)}\n```\n"
-                f"NAME: {e.nombre_original}"
+                f"NAME: {normalizar_nombre(e.nombre_original)}"
             )
         usuario = (
             "Here are labeled examples of functions and their real names:\n\n"

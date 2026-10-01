@@ -174,3 +174,52 @@ Capturas: `capturas/2026-10-01_bench_windows_3corridas_a.png`, `..._b.png`,
 - Probar `qwen2.5-coder:3b` y `deepseek-coder:6.7b` con las mismas 20 funciones.
 - Ampliar el dataset con proyectos reales (cJSON, tinyexpr, miniz) para acercarse a 500 funciones.
 - Evaluar una métrica semántica adicional, porque F1 por tokens subestima respuestas correctas.
+
+---
+
+## 2026-10-01 (mañana) — Integración con la capa de reconstrucción
+
+Se revisó el contexto y la guía del trabajo de Fernanda (servidor `techmaleon`, `reconstructor.py`,
+oráculo y validación con 7 proyectos reales).
+
+### Problema encontrado: el `report.json` no era compatible
+| Contrato de `reconstructor.py` | Lo que generaba `elfinfer infer` |
+|---|---|
+| objeto `{"binary", "functions": [...]}` | lista directa `[...]` |
+| `address`, `size`, `inferred_name` | `direccion`, `tamano_bytes`, `nombre_inferido` |
+| `confidence`, `prompt_strategy` | `confianza`, `estrategia` |
+
+Los datos estaban, pero con otros nombres; además el reporte mezcla varias estrategias.
+**Solución:** nuevo comando `elfinfer export`, que genera un archivo por binario y estrategia con el
+formato exacto del contrato. El reporte de evaluación no cambia.
+
+### Prueba de punta a punta
+Binario `checksum_O0` compilado como PIE (igual que los del servidor) → `infer` (modelo simulado) →
+`export` → `reconstructor.py` de la guía (md5 `b8a20db9c2f0334c34f72de4e182ac78`):
+- Símbolos reinyectados: **7 de 7**.
+- Salida del programa idéntica antes y después (mismo SHA-256).
+- `readelf` y Radare2 muestran los nombres reinyectados.
+- Archivo exportado: `resultados/2026-10-01_prueba_contrato_checksum_O0.json`.
+
+### Otros cambios por hallazgos de la capa de reconstrucción
+1. **Código de arranque:** se mandaban al modelo `entry0` (`_start`), `entry.init0` y `entry.fini0`.
+   Ahora se descartan, igual que en el oráculo.
+2. **`main`:** Radare2 la reconoce en el binario stripped. Ya no se le pregunta al modelo; se reporta con
+   ese nombre y confianza `alta` (y no cuenta en las métricas).
+3. **Convención de nombres del servidor:** `build-dataset` acepta `<proyecto>_<nivel>_stripped` /
+   `_nonstripped`, así que se pueden reutilizar los binarios de los 7 proyectos reales del servidor.
+4. **Sufijos de GCC** (`.constprop.0`, `.isra.0`, `.part.1`, `.cold`): se quitan antes de evaluar.
+5. **Tokens por respuesta:** cada inferencia guarda `tokens_prompt` y `tokens_respuesta`, para explicar
+   los tiempos con evidencia.
+
+### Sobre los 0.66 s por función
+La observación de que podría ser "efecto de caché" es válida y se revisará con los nuevos campos.
+Lo esperado: cada función tiene un prompt distinto, así que la caché de Ollama solo reutiliza la parte
+común (instrucciones del sistema y, en few-shot, a veces ejemplos repetidos). La causa principal del
+tiempo bajo es que en zero-shot y few-shot el modelo genera muy pocos tokens (solo `NAME: x`), mientras
+que CoT genera cientos (por eso tarda ~24 s). Con `tokens_respuesta` se podrá confirmar.
+
+### Siguiente
+- Copiar los binarios del servidor y generar el dataset real (`build-dataset --bin-dir`).
+- Primera prueba de punta a punta con el modelo real sobre `aes_O0_stripped` y el reconstructor del servidor.
+- Medición en Linux (Parrot, dual boot desde disco externo): anotar que el disco es USB.

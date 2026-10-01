@@ -93,6 +93,12 @@ def verificar_ollama(modelo: str) -> None:
 
 def inferir_funcion(f: Funcion, modelo: str, estrategia: str,
                     pool: list[Funcion] | None = None) -> dict:
+    if f.nombre_r2:
+        # Radare2 ya conoce el nombre (p. ej. main): no se consulta al modelo ni se evalúa
+        return {"direccion": f.direccion, "tamano_bytes": f.tamano_bytes,
+                "nombre_inferido": f.nombre_r2, "estrategia": estrategia, "modelo": modelo,
+                "segundos": 0.0, "binario": f.binario, "confianza": "alta",
+                "origen": "radare2"}
     mensajes = construir_prompt(f, estrategia, pool)
     t0 = time.perf_counter()
     resp = _cliente().chat(model=modelo, messages=mensajes, options=OPCIONES)
@@ -108,6 +114,10 @@ def inferir_funcion(f: Funcion, modelo: str, estrategia: str,
         "modelo": modelo,
         "segundos": round(segundos, 3),
         "binario": f.binario,
+        # Evidencia para interpretar tiempos: tokens leídos del prompt y tokens generados.
+        # Si tokens_prompt sale muy bajo, Ollama reutilizó caché del prompt anterior.
+        "tokens_prompt": getattr(resp, "prompt_eval_count", None),
+        "tokens_respuesta": getattr(resp, "eval_count", None),
     }
 
     if f.nombre_original:  # modo evaluación

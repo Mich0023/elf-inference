@@ -14,20 +14,29 @@ import re
 from collections import Counter
 
 _RE_CAMEL = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
+# Sufijos que GCC agrega a clones optimizados: cJSON_strdup.constprop.0, f.isra.0, g.part.1, h.cold
+_RE_SUFIJO_GCC = re.compile(r"(\.(constprop|isra|part|cold|lto_priv|localalias)(\.\d+)?)+$")
+
+
+def normalizar_nombre(nombre: str | None) -> str | None:
+    """'cJSON_strdup.constprop.0' -> 'cJSON_strdup'. El modelo no puede adivinar esos sufijos."""
+    if not nombre:
+        return nombre
+    return _RE_SUFIJO_GCC.sub("", nombre)
 
 
 def tokenizar(nombre: str | None) -> list[str]:
     """'calculateCheck_sum2' -> ['calculate', 'check', 'sum2']"""
     if not nombre:
         return []
-    nombre = _RE_CAMEL.sub("_", nombre)
+    nombre = _RE_CAMEL.sub("_", normalizar_nombre(nombre))
     return [t for t in re.split(r"[_\W]+", nombre.lower()) if t]
 
 
 def exact_match(pred: str | None, ref: str | None) -> float:
     if not pred or not ref:
         return 0.0
-    return float(pred.strip().lower() == ref.strip().lower())
+    return float(normalizar_nombre(pred).strip().lower() == normalizar_nombre(ref).strip().lower())
 
 
 def f1_tokens(pred: str | None, ref: str | None) -> float:
@@ -68,6 +77,11 @@ def nivel_confianza(f1: float) -> str:
     return "baja"
 
 
+def _prom(valores: list) -> float | None:
+    v = [x for x in valores if isinstance(x, (int, float))]
+    return round(sum(v) / len(v), 1) if v else None
+
+
 def resumen(filas: list[dict]) -> dict:
     """Promedios por (modelo, estrategia) a partir de filas con em/f1/bleu4."""
     grupos: dict[tuple, list[dict]] = {}
@@ -84,5 +98,6 @@ def resumen(filas: list[dict]) -> dict:
             "F1": round(sum(x["f1"] for x in g) / n, 4),
             "BLEU4": round(sum(x["bleu4"] for x in g) / n, 4),
             "seg_promedio": round(sum(x["segundos"] for x in g) / n, 2),
+            "tokens_resp_prom": _prom([x.get("tokens_respuesta") for x in g]),
         }
     return salida

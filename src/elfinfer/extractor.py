@@ -41,6 +41,9 @@ class Funcion:
     assembly: list[str] = field(default_factory=list)
     nombre_original: str | None = None   # solo si el binario tiene símbolos
     binario: str = ""
+    # Nombre que Radare2 recupera aunque el binario esté stripped (p. ej. "main").
+    # No se le pregunta al modelo ni se evalúa; se reporta tal cual.
+    nombre_r2: str | None = None
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -84,6 +87,8 @@ def extraer_funciones(ruta_binario: str | Path,
             nombre_r2 = f.get("name", "")
             if nombre_r2.startswith("sym.imp."):
                 continue  # funciones importadas (printf, malloc...): no tienen código aquí
+            if nombre_r2.startswith("entry"):
+                continue  # arranque del programa (_start, init/fini): lo agrega el compilador
             n_ins = int(f.get("ninstrs") or f.get("ninstr") or 0)
             if n_ins < min_ins or n_ins > max_ins:
                 continue
@@ -96,13 +101,15 @@ def extraer_funciones(ruta_binario: str | Path,
             ops = [_normalizar_instruccion(op) for op in pdf.get("ops", [])]
             ops = [o for o in ops if o]
 
+            conocido = nombre if nombre in NO_EVALUAR else None
             funciones.append(Funcion(
                 direccion=hex(addr),
                 tamano_bytes=int(f.get("realsz") or f.get("size") or 0),
                 num_instrucciones=n_ins,
                 assembly=ops,
-                nombre_original=nombre,
+                nombre_original=None if conocido else nombre,
                 binario=Path(ruta).name,
+                nombre_r2=conocido,
             ))
         return funciones
     finally:
@@ -115,8 +122,7 @@ def emparejar_con_ground_truth(stripped: list[Funcion],
     `strip` no mueve el código, así que la misma función tiene la misma
     dirección en ambas versiones. Usamos eso para pegar el nombre real.
     """
-    nombres = {f.direccion: f.nombre_original for f in con_simbolos
-               if f.nombre_original and f.nombre_original not in NO_EVALUAR}
+    nombres = {f.direccion: f.nombre_original for f in con_simbolos if f.nombre_original}
     for f in stripped:
         f.nombre_original = nombres.get(f.direccion)
     return stripped

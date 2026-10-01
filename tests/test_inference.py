@@ -62,13 +62,21 @@ def test_cot_exige_razonamiento():
     assert "Do NOT skip the reasoning" in texto
 
 
-def test_main_no_se_evalua():
-    from elfinfer.extractor import emparejar_con_ground_truth
-    stripped = [Funcion("0x10", 9, 9, [], None), Funcion("0x20", 9, 9, [], None)]
-    ref = [Funcion("0x10", 9, 9, [], "main"), Funcion("0x20", 9, 9, [], "list_sum")]
-    res = emparejar_con_ground_truth(stripped, ref)
-    assert res[0].nombre_original is None
-    assert res[1].nombre_original == "list_sum"
+def test_main_no_se_evalua(monkeypatch):
+    """main la reconoce Radare2: no entra al dataset ni se le pregunta al modelo."""
+    main = Funcion("0x10", 9, 9, ["ret"], None, "x_O0.stripped", nombre_r2="main")
+    llamadas = []
+
+    class Espia(ClienteFalso):
+        def chat(self, *a, **k):
+            llamadas.append(1)
+            return super().chat(*a, **k)
+
+    monkeypatch.setattr(inference.ollama, "Client", Espia)
+    monkeypatch.setattr(inference, "_CLIENTE", None)
+    fila = inference.inferir_funcion(main, "qwen2.5-coder:7b", "few-shot")
+    assert fila["nombre_inferido"] == "main" and fila["origen"] == "radare2"
+    assert "f1" not in fila and not llamadas
 
 
 def test_parser_respuestas_reales_cot():
