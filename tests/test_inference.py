@@ -67,3 +67,12 @@ def test_main_no_se_evalua():
     res = emparejar_con_ground_truth(stripped, ref)
     assert res[0].nombre_original is None
     assert res[1].nombre_original == "list_sum"
+
+
+def test_parser_respuestas_reales_cot():
+    # casos que fallaron en la corrida del 2026-10-01
+    assert inference.parsear_nombre("...\n### NAME:\nNAME: check_and_jump") == "check_and_jump"
+    assert inference.parsear_nombre("### NAME:\nNAME: `update_pointer`") == "update_pointer"
+    assert inference.parsear_nombre("**NAME:** count_nodes") == "count_nodes"
+    assert inference.parsear_nombre("### NAME:\ntransform_range") == "transform_range"
+    assert inference.parsear_nombre("**NAME: count_whitespace**") == "count_whitespace"

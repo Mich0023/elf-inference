@@ -20,13 +20,25 @@ from . import metrics
 from .extractor import Funcion
 from .prompt_builder import construir_prompt
 
-OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
+# 127.0.0.1 y no "localhost": en Windows "localhost" intenta primero IPv6 (::1),
+# Ollama solo escucha en IPv4 y cada llamada pierde ~2 s esperando el fallback.
+OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434")
+# OLLAMA_HOST=0.0.0.0 sirve para que el *servidor* escuche en todas las interfaces,
+# pero como dirección de *cliente* no es válida: se traduce a 127.0.0.1.
+if "0.0.0.0" in OLLAMA_HOST or "localhost" in OLLAMA_HOST:
+    OLLAMA_HOST = OLLAMA_HOST.replace("0.0.0.0", "127.0.0.1").replace("localhost", "127.0.0.1")
+if not OLLAMA_HOST.startswith("http"):
+    OLLAMA_HOST = "http://" + OLLAMA_HOST
+if OLLAMA_HOST.count(":") == 1:  # sin puerto
+    OLLAMA_HOST += ":11434"
 
 # temperatura baja = respuestas reproducibles (BinMetric usa 0.1)
 # num_predict acota la respuesta (CoT necesita espacio para razonar)
 OPCIONES = {"temperature": 0.1, "top_p": 1.0, "num_ctx": 4096, "num_predict": 512, "seed": 42}
 
-_RE_NAME = re.compile(r"NAME:\s*`?([A-Za-z_][A-Za-z0-9_]*)`?")
+# Acepta variantes que usa el modelo: "NAME: x", "**NAME:** x", "### NAME:\nx",
+# "NAME: `x`" y hasta "### NAME:\nNAME: x" (por eso se descarta la palabra "name").
+_RE_NAME = re.compile(r"NAME\s*:[\s*`#]*([A-Za-z_][A-Za-z0-9_]*)")
 _RE_IDENT = re.compile(r"\b([a-z][a-z0-9]*(?:_[a-z0-9]+)+)\b")
 
 
@@ -36,7 +48,7 @@ def _cliente() -> ollama.Client:
 
 def parsear_nombre(respuesta: str) -> str | None:
     """Saca el nombre de la respuesta del modelo. Prefiere la línea NAME: final."""
-    encontrados = _RE_NAME.findall(respuesta)
+    encontrados = [n for n in _RE_NAME.findall(respuesta) if n.lower() != "name"]
     if encontrados:
         return encontrados[-1].lower()
     # Plan B: último identificador snake_case que aparezca.
