@@ -76,7 +76,8 @@ docker compose run --rm elfinfer infer data/dataset/dataset.json \
 | `prompt JSON --estrategia few-shot --indice N --pool dataset.json` | Muestra el prompt exacto (no usa GPU) |
 | `infer ENTRADA [--ref] --modelo M --estrategia E -o report.json` | Corre la inferencia y genera `report.json` |
 | `evaluate report.json` | Tabla de EM / F1 / BLEU-4 por modelo y estrategia |
-| `bench BIN --repeticiones 5` | Mide tiempos de extracción (comparativa entre SO) |
+| `bench --entorno E [--inferencia N]` | Mide tiempos de extracción e inferencia (comparativa entre SO) |
+| `bench-report` | Tabla comparativa de todos los entornos medidos |
 
 `--modelo` y `--estrategia` se pueden repetir para correr varias combinaciones.
 
@@ -132,20 +133,18 @@ En few-shot **nunca** se usan ejemplos del mismo proyecto que la función evalua
 
 ---
 
-## Comparar Windows vs Ubuntu vs Docker
-
-`bench` guarda cada medición en `results/benchmarks.csv` con el entorno detectado:
+## Comparar Windows vs Linux vs Docker
 
 ```bash
-# Dentro de Docker
-docker compose run --rm elfinfer bench data/binaries/strutils_O2.stripped --repeticiones 10
-
-# En Windows o Ubuntu nativo (con Python + radare2 instalados)
-pip install -e .
-elfinfer bench data/binaries/strutils_O2.stripped --repeticiones 10
+docker compose run --rm elfinfer bench --entorno docker-windows --repeticiones 5 --inferencia 10
+elfinfer bench --entorno windows --repeticiones 5 --inferencia 10    # nativo, con el venv activo
+elfinfer bench-report                                               # tabla comparativa
 ```
 
-Para la inferencia, `report.json` guarda los `segundos` de cada llamada al modelo.
+Mide por separado la **extracción** (Radare2) y la **inferencia** (LLM) y guarda todo en
+`benchmarks/benchmarks.csv`, que sí se sube a Git. El protocolo completo está en
+[`docs/comparativa_so.md`](docs/comparativa_so.md) y el registro de pruebas en
+[`docs/bitacora.md`](docs/bitacora.md).
 
 ---
 
@@ -186,7 +185,9 @@ elf-inference/
 ├── scripts/build_samples.sh
 ├── tests/                 # pytest
 ├── data/                  # binarios y dataset (generados, no se suben a Git)
-├── results/               # reportes y benchmarks (generados)
+├── results/               # reportes de inferencia (generados)
+├── benchmarks/            # mediciones de tiempo (sí se suben)
+├── docs/                  # bitácora, comparativa y capturas
 ├── Dockerfile
 └── docker-compose.yml
 ```

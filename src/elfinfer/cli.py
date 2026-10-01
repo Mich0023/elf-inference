@@ -196,34 +196,120 @@ def _imprimir_resumen(res: dict) -> None:
 
 
 # --------------------------------------------------------------------- bench
-@cli.command()
-@click.argument("binario", type=click.Path(exists=True, dir_okay=False))
-@click.option("--repeticiones", default=5, show_default=True)
-@click.option("--entorno", default=None, help="Etiqueta: windows / docker / ubuntu. Se autodetecta si se omite.")
-@click.option("-o", "--out", default="results/benchmarks.csv", show_default=True)
-def bench(binario, repeticiones, entorno, out):
-    """Mide el tiempo de extracción para comparar sistemas operativos."""
-    if entorno is None:
-        entorno = "docker" if Path("/.dockerenv").exists() else platform.system().lower()
-    tiempos = []
-    n = 0
-    for i in range(repeticiones):
-        t0 = time.perf_counter()
-        n = len(extraer_funciones(binario))
-        tiempos.append(time.perf_counter() - t0)
-        click.echo(f"  corrida {i + 1}: {tiempos[-1]:.2f}s")
-    media = statistics.mean(tiempos)
-    desv = statistics.stdev(tiempos) if len(tiempos) > 1 else 0.0
-    click.secho(f"[+] {entorno}: {media:.2f}s ± {desv:.2f}s ({n} funciones)", fg="green")
+def _entorno_auto() -> str:
+    if Path("/.dockerenv").exists():
+        return "docker"
+    return platform.system().lower()
 
+
+def _guardar_bench(out: str, fila: dict) -> None:
+    columnas = ["fecha", "entorno", "etapa", "detalle", "n", "repeticiones",
+                "media_s", "desv_s", "total_s", "radare2", "python", "plataforma"]
     nuevo = not Path(out).exists()
     Path(out).parent.mkdir(parents=True, exist_ok=True)
     with open(out, "a", newline="", encoding="utf-8") as fh:
-        w = csv.writer(fh)
+        w = csv.DictWriter(fh, fieldnames=columnas)
         if nuevo:
-            w.writerow(["entorno", "binario", "etapa", "funciones", "repeticiones", "media_s", "desv_s", "python", "plataforma"])
-        w.writerow([entorno, Path(binario).name, "extraccion", n, repeticiones,
-                    f"{media:.3f}", f"{desv:.3f}", platform.python_version(), platform.platform()])
+            w.writeheader()
+        w.writerow(fila)
+
+
+def _version_r2() -> str:
+    r2 = shutil.which("radare2") or shutil.which("r2")
+    if not r2:
+        return "?"
+    salida = subprocess.run([r2, "-v"], capture_output=True, text=True).stdout.split()
+    return salida[1] if len(salida) > 1 else "?"
+
+
+@cli.command()
+@click.option("--entorno", default=None,
+              help="Etiqueta del entorno, p. ej. windows, docker-windows, ubuntu, docker-ubuntu.")
+@click.option("--bin-dir", default="data/binaries", show_default=True,
+              type=click.Path(exists=True, file_okay=False))
+@click.option("--repeticiones", default=5, show_default=True, help="Pasadas de extracción.")
+@click.option("--inferencia", "n_inferencia", default=0, show_default=True,
+              help="Nº de funciones a inferir para medir el LLM (0 = no medir).")
+@click.option("--modelo", default="qwen2.5-coder:7b", show_default=True)
+@click.option("--estrategia", type=click.Choice(ESTRATEGIAS), default="few-shot", show_default=True)
+@click.option("--pool", default="data/dataset/dataset.json", show_default=True)
+@click.option("--semilla", default=42, show_default=True)
+@click.option("-o", "--out", default="benchmarks/benchmarks.csv", show_default=True)
+def bench(entorno, bin_dir, repeticiones, n_inferencia, modelo, estrategia, pool, semilla, out):
+    """
+    Mide tiempos por etapa para comparar Windows, Linux y Docker.
+
+    \b
+    - extraccion: Radare2 sobre TODOS los *.stripped de --bin-dir, varias pasadas.
+    - inferencia: las mismas N funciones (semilla fija) en el modelo local.
+    Cada medición se agrega a benchmarks/benchmarks.csv.
+    """
+    entorno = entorno or _entorno_auto()
+    comun = {"fecha": time.strftime("%Y-%m-%d %H:%M"), "entorno": entorno,
+             "radare2": _version_r2(), "python": platform.python_version(),
+             "plataforma": platform.platform()}
+
+    # ---- extracción
+    binarios = sorted(Path(bin_dir).glob("*.stripped"))
+    if not binarios:
+        raise click.ClickException(f"No hay *.stripped en {bin_dir}. Corre scripts/build_samples.sh")
+    click.secho(f"[extracción] {len(binarios)} binarios × {repeticiones} pasadas", fg="cyan")
+    tiempos, n_fn = [], 0
+    for i in range(repeticiones):
+        t0 = time.perf_counter()
+        n_fn = sum(len(extraer_funciones(b)) for b in binarios)
+        tiempos.append(time.perf_counter() - t0)
+        click.echo(f"  pasada {i + 1}: {tiempos[-1]:.2f}s ({n_fn} funciones)")
+    media = statistics.mean(tiempos)
+    desv = statistics.stdev(tiempos) if len(tiempos) > 1 else 0.0
+    click.secho(f"  => {media:.2f}s ± {desv:.2f}s por pasada", fg="green")
+    _guardar_bench(out, {**comun, "etapa": "extraccion", "detalle": f"{len(binarios)} binarios",
+                         "n": n_fn, "repeticiones": repeticiones, "media_s": f"{media:.3f}",
+                         "desv_s": f"{desv:.3f}", "total_s": f"{sum(tiempos):.3f}"})
+
+    # ---- inferencia
+    if n_inferencia > 0:
+        from .inference import inferir_funcion, verificar_ollama
+        verificar_ollama(modelo)
+        pool_total = cargar_json(pool)
+        muestra = list(pool_total)
+        random.Random(semilla).shuffle(muestra)
+        muestra = muestra[:n_inferencia]
+        click.secho(f"[inferencia] {modelo} | {estrategia} | {len(muestra)} funciones", fg="cyan")
+
+        # calentamiento: la primera llamada carga el modelo en memoria y no se cuenta
+        inferir_funcion(muestra[0], modelo, estrategia, pool_total)
+
+        t_fn = []
+        for f in muestra:
+            pool_fs = [p for p in pool_total if _proyecto(p.binario) != _proyecto(f.binario)]
+            t0 = time.perf_counter()
+            inferir_funcion(f, modelo, estrategia, pool_fs)
+            t_fn.append(time.perf_counter() - t0)
+            click.echo(f"  {f.nombre_original or f.direccion:25s} {t_fn[-1]:.2f}s")
+        media = statistics.mean(t_fn)
+        desv = statistics.stdev(t_fn) if len(t_fn) > 1 else 0.0
+        click.secho(f"  => {media:.2f}s ± {desv:.2f}s por función", fg="green")
+        _guardar_bench(out, {**comun, "etapa": "inferencia", "detalle": f"{modelo} | {estrategia}",
+                             "n": len(t_fn), "repeticiones": 1, "media_s": f"{media:.3f}",
+                             "desv_s": f"{desv:.3f}", "total_s": f"{sum(t_fn):.3f}"})
+
+    click.echo(f"[+] Guardado en {out}")
+
+
+@cli.command("bench-report")
+@click.option("-i", "--entrada", default="benchmarks/benchmarks.csv", show_default=True,
+              type=click.Path(exists=True, dir_okay=False))
+def bench_report(entrada):
+    """Tabla comparativa de entornos a partir de benchmarks.csv."""
+    with open(entrada, encoding="utf-8") as fh:
+        filas = list(csv.DictReader(fh))
+    grupos: dict[tuple, list[float]] = {}
+    for f in filas:
+        grupos.setdefault((f["etapa"], f["detalle"], f["entorno"]), []).append(float(f["media_s"]))
+    click.echo(f"\n{'etapa':11s} {'detalle':35s} {'entorno':16s} {'corridas':>8} {'media_s':>9}")
+    for (etapa, detalle, ent), v in sorted(grupos.items()):
+        click.echo(f"{etapa:11s} {detalle:35s} {ent:16s} {len(v):8d} {statistics.mean(v):9.3f}")
 
 
 if __name__ == "__main__":

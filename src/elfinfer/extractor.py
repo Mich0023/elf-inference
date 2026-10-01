@@ -28,6 +28,11 @@ FUNCIONES_COMPILADOR = {
 }
 
 
+# Nombres que Radare2 recupera aunque el binario esté stripped (por heurística),
+# así que no sirven para evaluar al modelo: se excluyen del ground truth.
+NO_EVALUAR = {"main"}
+
+
 @dataclass
 class Funcion:
     direccion: str                 # "0x1149"
@@ -110,7 +115,8 @@ def emparejar_con_ground_truth(stripped: list[Funcion],
     `strip` no mueve el código, así que la misma función tiene la misma
     dirección en ambas versiones. Usamos eso para pegar el nombre real.
     """
-    nombres = {f.direccion: f.nombre_original for f in con_simbolos if f.nombre_original}
+    nombres = {f.direccion: f.nombre_original for f in con_simbolos
+               if f.nombre_original and f.nombre_original not in NO_EVALUAR}
     for f in stripped:
         f.nombre_original = nombres.get(f.direccion)
     return stripped

@@ -25,6 +25,15 @@ SISTEMA = (
 
 FORMATO = "Answer with a single final line exactly in this form:\nNAME: <function_name>"
 
+# Para chain-of-thought el razonamiento es obligatorio; si no, el modelo
+# se salta los pasos y responde directo (visto en la primera corrida).
+FORMATO_COT = (
+    "Write your analysis first, under the heading 'Reasoning:', covering the "
+    "three steps above in a few sentences each. Do NOT skip the reasoning.\n"
+    "Only after the reasoning, end with a last line exactly in this form:\n"
+    "NAME: <function_name>"
+)
+
 MAX_LINEAS_EJEMPLO = 60   # recorta ejemplos largos para no reventar el contexto
 
 
@@ -95,7 +104,7 @@ def construir_prompt(objetivo: Funcion, estrategia: str,
             "(loops, comparisons, calls, memory accesses).\n"
             "2. Infer the probable arguments and the return type.\n"
             "3. Propose a descriptive name that summarizes that behaviour.\n\n"
-            f"{FORMATO}"
+            f"{FORMATO_COT}"
         )
 
     return [

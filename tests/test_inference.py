@@ -52,3 +52,18 @@ def test_few_shot_no_filtra_la_respuesta():
     assert all(e.nombre_original != "list_sum" for e in ejemplos)
     texto = construir_prompt(objetivo, "few-shot", pool)[1]["content"]
     assert "NAME: list_sum" not in texto
+
+
+def test_cot_exige_razonamiento():
+    texto = construir_prompt(_fn(None), "cot")[1]["content"]
+    assert "Reasoning:" in texto
+    assert "Do NOT skip the reasoning" in texto
+
+
+def test_main_no_se_evalua():
+    from elfinfer.extractor import emparejar_con_ground_truth
+    stripped = [Funcion("0x10", 9, 9, [], None), Funcion("0x20", 9, 9, [], None)]
+    ref = [Funcion("0x10", 9, 9, [], "main"), Funcion("0x20", 9, 9, [], "list_sum")]
+    res = emparejar_con_ground_truth(stripped, ref)
+    assert res[0].nombre_original is None
+    assert res[1].nombre_original == "list_sum"

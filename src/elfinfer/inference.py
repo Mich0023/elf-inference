@@ -23,7 +23,8 @@ from .prompt_builder import construir_prompt
 OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
 
 # temperatura baja = respuestas reproducibles (BinMetric usa 0.1)
-OPCIONES = {"temperature": 0.1, "top_p": 1.0, "num_ctx": 4096, "seed": 42}
+# num_predict acota la respuesta (CoT necesita espacio para razonar)
+OPCIONES = {"temperature": 0.1, "top_p": 1.0, "num_ctx": 4096, "num_predict": 512, "seed": 42}
 
 _RE_NAME = re.compile(r"NAME:\s*`?([A-Za-z_][A-Za-z0-9_]*)`?")
 _RE_IDENT = re.compile(r"\b([a-z][a-z0-9]*(?:_[a-z0-9]+)+)\b")
