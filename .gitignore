@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+
+# Generados (se reconstruyen con los scripts)
+data/binaries/*
+!data/binaries/.gitkeep
+data/dataset/*
+!data/dataset/.gitkeep
+results/*
+!results/.gitkeep
+
+# Editor / SO
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+.env

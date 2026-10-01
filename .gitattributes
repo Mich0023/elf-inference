@@ -1,0 +1,4 @@
+# Que los scripts .sh conserven saltos de línea Unix aunque se clonen en Windows
+*.sh text eol=lf
+Dockerfile text eol=lf
+*.py text eol=lf

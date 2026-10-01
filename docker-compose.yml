@@ -1,0 +1,17 @@
+services:
+  elfinfer:
+    build: .
+    image: elfinfer:latest
+    working_dir: /app
+    # El código, los binarios y los resultados viven en tu carpeta:
+    # lo que edites en VS Code se ve dentro del contenedor al instante.
+    volumes:
+      - .:/app
+    environment:
+      # Ollama corre en tu máquina (Windows/Linux/Mac), no en el contenedor
+      - OLLAMA_HOST=http://host.docker.internal:11434
+    extra_hosts:
+      # necesario en Linux; en Windows/Mac Docker Desktop ya lo trae
+      - "host.docker.internal:host-gateway"
+    entrypoint: ["elfinfer"]
+    command: ["--help"]
