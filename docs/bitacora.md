@@ -143,9 +143,34 @@ Aciertos exactos: `reverse_string` (zero-shot) y `duplicate_string` (CoT).
 
 Capturas: `capturas/2026-10-01_bench_windows_tras_correccion.png`, `capturas/2026-10-01_bench_report.png`.
 
+### Comparativa final del día: 3 corridas por entorno, cliente reutilizado
+
+`elfinfer bench-report --desde "2026-10-01 06:24"` (solo mediciones con el código corregido):
+
+| Etapa | Windows nativo | Docker en Windows | Diferencia |
+|---|---|---|---|
+| Extracción, s/pasada (9 binarios, 95 funciones) | **1.12 ± 0.04** (1.09–1.16) | 1.66 ± 0.04 (1.63–1.71) | Docker ~48% más lento |
+| Inferencia few-shot, s/función (10 funciones) | 0.66 ± 0.00 | 0.67 ± 0.02 | ≈ igual (~2%) |
+
+**Conclusiones**
+1. **La extracción sí depende del entorno.** Radare2 nativo en Windows es ~33% más rápido que dentro
+   de Docker. La causa es la capa de virtualización de Docker en Windows (WSL2) y el acceso a la carpeta
+   compartida. Se espera que en Linux nativo Docker no tenga ese costo.
+2. **La inferencia no depende del sistema operativo.** Con la conexión corregida, Windows y Docker
+   tardan lo mismo: el tiempo lo define la GPU (RTX 3050, 4 GB) y Ollama, no el entorno del cliente.
+3. **Los dos errores de medición encontrados eran del cliente, no del SO:** resolver `localhost`
+   por IPv6 (~2 s por llamada) y abrir una conexión nueva por función (~0.9 s). Corregirlos bajó la
+   inferencia nativa de 3.15 s a 0.66 s por función (4.8× más rápido) y también mejoró Docker
+   (0.90 → 0.67 s).
+4. Para los experimentos grandes, la extracción representa una parte mínima del tiempo total
+   (~0.012 s por función contra ~0.66 s de inferencia few-shot y ~24 s de CoT), así que **elegir
+   Docker por portabilidad casi no cuesta tiempo** en el pipeline completo.
+
+Capturas: `capturas/2026-10-01_bench_windows_3corridas_a.png`, `..._b.png`,
+`capturas/2026-10-01_bench_docker_3corridas_a.png`, `..._b.png`, `capturas/2026-10-01_bench_report_final.png`.
+
 ### Siguiente
-- Repetir `bench` 3 veces en `windows` y `docker-windows` con el cliente reutilizado.
-- Medir en Linux (misma laptop, USB booteable o arranque dual).
+- Medir en Linux (misma laptop, USB booteable o arranque dual) con `--entorno ubuntu` y `docker-ubuntu`.
 - Probar `qwen2.5-coder:3b` y `deepseek-coder:6.7b` con las mismas 20 funciones.
 - Ampliar el dataset con proyectos reales (cJSON, tinyexpr, miniz) para acercarse a 500 funciones.
 - Evaluar una métrica semántica adicional, porque F1 por tokens subestima respuestas correctas.

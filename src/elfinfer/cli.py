@@ -300,16 +300,24 @@ def bench(entorno, bin_dir, repeticiones, n_inferencia, modelo, estrategia, pool
 @cli.command("bench-report")
 @click.option("-i", "--entrada", default="benchmarks/benchmarks.csv", show_default=True,
               type=click.Path(exists=True, dir_okay=False))
-def bench_report(entrada):
+@click.option("--desde", default=None,
+              help='Solo mediciones desde esta fecha UTC, p. ej. "2026-10-01 06:24".')
+def bench_report(entrada, desde):
     """Tabla comparativa de entornos a partir de benchmarks.csv."""
     with open(entrada, encoding="utf-8") as fh:
         filas = list(csv.DictReader(fh))
+    if desde:
+        filas = [f for f in filas if f["fecha"] >= desde]
     grupos: dict[tuple, list[float]] = {}
     for f in filas:
         grupos.setdefault((f["etapa"], f["detalle"], f["entorno"]), []).append(float(f["media_s"]))
-    click.echo(f"\n{'etapa':11s} {'detalle':35s} {'entorno':16s} {'corridas':>8} {'media_s':>9}")
+    if desde:
+        click.echo(f"(mediciones desde {desde} UTC)")
+    click.echo(f"\n{'etapa':11s} {'detalle':30s} {'entorno':16s} {'corridas':>8} {'media_s':>8} {'desv_s':>7} {'min':>6} {'max':>6}")
     for (etapa, detalle, ent), v in sorted(grupos.items()):
-        click.echo(f"{etapa:11s} {detalle:35s} {ent:16s} {len(v):8d} {statistics.mean(v):9.3f}")
+        desv = statistics.stdev(v) if len(v) > 1 else 0.0
+        click.echo(f"{etapa:11s} {detalle:30s} {ent:16s} {len(v):8d} {statistics.mean(v):8.3f} "
+                   f"{desv:7.3f} {min(v):6.2f} {max(v):6.2f}")
 
 
 if __name__ == "__main__":

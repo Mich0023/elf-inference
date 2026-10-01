@@ -51,4 +51,19 @@ así las mediciones de distintas máquinas quedan juntas.
 
 ## Resultados
 
-Ver `bench-report` y la bitácora (`docs/bitacora.md`).
+```bash
+elfinfer bench-report --desde "2026-10-01 06:24"   # ignora mediciones previas a las correcciones
+```
+
+### Windows 11 (2026-10-01, 3 corridas por entorno)
+
+| Etapa | Windows nativo | Docker en Windows |
+|---|---|---|
+| Extracción (s/pasada) | 1.12 ± 0.04 | 1.66 ± 0.04 |
+| Inferencia few-shot (s/función) | 0.66 ± 0.00 | 0.67 ± 0.02 |
+
+### Linux
+
+Pendiente.
+
+Detalle y análisis en `docs/bitacora.md`.
